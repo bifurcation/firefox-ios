@@ -27,7 +27,7 @@ public class MockSyncManager: SyncManager {
     public func syncEverything() -> Success {
         return succeed()
     }
-
+    
     public func beginTimedSyncs() {}
     public func endTimedSyncs() {}
     public func applicationDidBecomeActive() {

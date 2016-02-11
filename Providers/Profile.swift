@@ -544,6 +544,8 @@ public class BrowserProfile: Profile {
 
         private var syncTimer: NSTimer? = nil
 
+        private var currentSync: Deferred<Maybe<[(EngineIdentifier, SyncStatus)]>>? = nil
+
         private var backgrounded: Bool = true
         func applicationDidEnterBackground() {
             self.backgrounded = true
@@ -899,7 +901,9 @@ public class BrowserProfile: Profile {
 
             // Always unlock when we're done.
             go.upon({ res in self.endSyncing() })
-            
+
+            self.currentSync = go
+
             return go
         }
 
@@ -919,7 +923,7 @@ public class BrowserProfile: Profile {
                 self.syncEverything()
             }
         }
-
+        
         @objc func syncOnTimer() {
             self.syncEverything()
         }
@@ -971,7 +975,6 @@ public class BrowserProfile: Profile {
             let stopBy = start + OneMinuteInMilliseconds
             log.debug("Checking green light. Backgrounded: \(self.backgrounded).")
             return {
-                !self.backgrounded &&
                 NSDate.now() < stopBy &&
                 self.profile.hasSyncableAccount()
             }
