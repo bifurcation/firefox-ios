@@ -656,10 +656,14 @@ public class BrowserProfile: Profile {
             // it doesn't really matter when it runs, so long as it doesn't
             // happen in the middle of a sync. We take the lock to prevent that.
             self.doInBackgroundAfter(millis: 300) {
-                OSSpinLockLock(&self.syncLock)
+                self.syncLock.lock()
+                // This prevents any syncs happening, and will drop any subsequent
+                // syncs on the floor while the database is being recreated.
+                self.currentSync = Deferred()
+                self.syncLock.unlock()
                 self.handleRecreationOfDatabaseNamed(name).upon { res in
                     log.debug("Reset of \(name) done: \(res.isSuccess)")
-                    OSSpinLockUnlock(&self.syncLock)
+                    self.currentSync = nil
                 }
             }
         }
