@@ -479,6 +479,8 @@
 		E4ECCDAE1AB131770005E717 /* FiraSans-Medium.ttf in Resources */ = {isa = PBXBuildFile; fileRef = E4ECCDAD1AB131770005E717 /* FiraSans-Medium.ttf */; };
 		E4ECD0881B70FD4F00B90D22 /* WindowCloseHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4ECD0871B70FD4F00B90D22 /* WindowCloseHelper.swift */; };
 		E4F21AA61A13C4A300B0FAAA /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = E4F21AA51A13C4A300B0FAAA /* Images.xcassets */; };
+		E5E22DA21C9A30980015B21E /* U2FHelper.swift in Sources */ = {isa = PBXBuildFile; fileRef = E5E22DA11C9A30980015B21E /* U2FHelper.swift */; };
+		E5E22DB11C9A35D40015B21E /* U2F.js in Resources */ = {isa = PBXBuildFile; fileRef = E5E22DB01C9A35D40015B21E /* U2F.js */; };
 		E60138651C89EB7600DF9756 /* Shared.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = 288A2D861AB8B3260023ABC3 /* Shared.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		E60138661C89EB7D00DF9756 /* Storage.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = 2FCAE21A1ABB51F800877008 /* Storage.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		E60138671C89EB8300DF9756 /* Account.framework in Copy Frameworks */ = {isa = PBXBuildFile; fileRef = 2FA435FB1ABB83B4008031D1 /* Account.framework */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
@@ -1422,6 +1424,8 @@
 		E4ECCDAD1AB131770005E717 /* FiraSans-Medium.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "FiraSans-Medium.ttf"; sourceTree = "<group>"; };
 		E4ECD0871B70FD4F00B90D22 /* WindowCloseHelper.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = WindowCloseHelper.swift; sourceTree = "<group>"; };
 		E4F21AA51A13C4A300B0FAAA /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Images.xcassets; sourceTree = "<group>"; };
+		E5E22DA11C9A30980015B21E /* U2FHelper.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = U2FHelper.swift; sourceTree = "<group>"; };
+		E5E22DB01C9A35D40015B21E /* U2F.js */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.javascript; path = U2F.js; sourceTree = "<group>"; xcLanguageSpecificationIdentifier = xcode.lang.c; };
 		E607BCCF1C60F63B0037C49D /* ViewLater.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = ViewLater.entitlements; sourceTree = "<group>"; };
 		E607BCD01C60F78C0037C49D /* SendTo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = SendTo.entitlements; sourceTree = "<group>"; };
 		E607BCD11C60F7970037C49D /* ShareTo.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = ShareTo.entitlements; sourceTree = "<group>"; };
@@ -2164,6 +2168,7 @@
 			isa = PBXGroup;
 			children = (
 				39A359E31BFCCE94006B9E87 /* SpotlightHelper.swift */,
+				E5E22DA11C9A30980015B21E /* U2FHelper.swift */,
 			);
 			name = Helpers;
 			sourceTree = "<group>";
@@ -2836,6 +2841,7 @@
 				D3B692401B9F9CC8004B87A4 /* FindInPage.js */,
 				0BDA568A1B26B1BE008C9B96 /* LoginsHelper.js */,
 				39A35AEC1C0662A3006B9E87 /* SpotlightHelper.js */,
+				E5E22DB01C9A35D40015B21E /* U2F.js */,
 				E49C0EB01B46109C009092BB /* WindowCloseHelper.js */,
 				D37524861C6E8B5A00A5F6C2 /* topdomains.txt */,
 				F84B21EF1A0910F600AAB793 /* Images.xcassets */,
@@ -3794,6 +3800,7 @@
 				E4B7B7641A793CF20022C5E0 /* CharisSILR.ttf in Resources */,
 				2F834D161A80629A006A0B7B /* FxASignIn.js in Resources */,
 				D3BA7E0C1B0E902A00153782 /* ContextMenu.js in Resources */,
+				E5E22DB11C9A35D40015B21E /* U2F.js in Resources */,
 				E4B7B7681A793CF20022C5E0 /* FiraSans-Bold.ttf in Resources */,
 				E4B7B7781A793CF20022C5E0 /* FiraSans-Italic.ttf in Resources */,
 				0BA1E00E1B03FB0B007675AF /* NetError.html in Resources */,
@@ -4257,6 +4264,7 @@
 				0B62EFD21AD63CD100ACB9CD /* Clearables.swift in Sources */,
 				D3BE7B481B05596800641031 /* AuroraAppDelegate.swift in Sources */,
 				DD31E0FB1B382B520077078A /* BrowserPrintPageRenderer.swift in Sources */,
+				E5E22DA21C9A30980015B21E /* U2FHelper.swift in Sources */,
 				E4CD9E911A6897FB00318571 /* ReaderMode.swift in Sources */,
 				E46C51C31B41ADD800EB349F /* Try.m in Sources */,
 				74C027451B2A348C001B1E88 /* SessionData.swift in Sources */,

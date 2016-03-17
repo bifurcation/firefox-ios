@@ -1459,6 +1459,10 @@ extension BrowserViewController: BrowserDelegate {
         }
         let spotlightHelper = SpotlightHelper(browser: browser, openURL: openURL)
         browser.addHelper(spotlightHelper, name: SpotlightHelper.name())
+        
+        let u2fHelper = U2FHelper(browser: browser)
+        u2fHelper.delegate = self
+        browser.addHelper(u2fHelper, name: U2FHelper.name())
     }
 
     func browser(browser: Browser, willDeleteWebView webView: WKWebView) {
@@ -2740,6 +2744,21 @@ extension BrowserViewController: FindInPageBarDelegate, FindInPageHelperDelegate
         findInPageBar?.totalResults = totalResults
     }
 }
+
+extension BrowserViewController: U2FHelperDelegate {
+    func register(u2fHelper: U2FHelper, withData data: [String: String]) {
+        // TODO
+        guard let webView = tabManager.selectedTab?.webView else { return }
+        webView.evaluateJavaScript("__firefox__.finishRegister()", completionHandler: nil)
+    }
+    
+    func sign(u2fHelper: U2FHelper, withData data: [String: String]) {
+        // TODO
+        guard let webView = tabManager.selectedTab?.webView else { return }
+        webView.evaluateJavaScript("__firefox__.finishSign()", completionHandler: nil)
+    }
+}
+
 
 extension BrowserViewController: JSPromptAlertControllerDelegate {
     func promptAlertControllerDidDismiss(alertController: JSPromptAlertController) {
