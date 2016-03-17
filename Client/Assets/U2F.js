@@ -23,8 +23,8 @@
         }
     }
     
-    window.__firefox__.finishRegister = function () {
-        alert("DID REGISTER");
+    window.__firefox__.finishRegister = function (text) {
+        alert("DID REGISTER: "+text);
     };
     
     window.__firefox__.finishSign = function () {

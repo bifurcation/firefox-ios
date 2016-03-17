@@ -14,6 +14,7 @@ import Alamofire
 import Account
 import ReadingList
 import MobileCoreServices
+import LocalAuthentication
 
 private let log = Logger.browserLogger
 
@@ -2747,13 +2748,28 @@ extension BrowserViewController: FindInPageBarDelegate, FindInPageHelperDelegate
 
 extension BrowserViewController: U2FHelperDelegate {
     func register(u2fHelper: U2FHelper, withData data: [String: String]) {
-        // TODO
+        // TODO: Actually register
+        
+        // XXX: Invoke LocalAuthentication just to show we can
         guard let webView = tabManager.selectedTab?.webView else { return }
-        webView.evaluateJavaScript("__firefox__.finishRegister()", completionHandler: nil)
+        let context = LAContext()
+        let policy = LAPolicy.DeviceOwnerAuthenticationWithBiometrics
+        let reason = "none"
+        if (context.canEvaluatePolicy(policy, error: nil)) {
+            context.evaluatePolicy(policy, localizedReason: reason as String, reply:{ authenticated, error in
+                if (authenticated) {
+                    webView.evaluateJavaScript("__firefox__.finishRegister('authenticated')", completionHandler: nil)
+                } else {
+                    webView.evaluateJavaScript("__firefox__.finishRegister('not authenticated')", completionHandler: nil)
+                }
+            })
+        } else {
+            webView.evaluateJavaScript("__firefox__.finishRegister('could not evaluate policy')", completionHandler: nil)
+        }
     }
     
     func sign(u2fHelper: U2FHelper, withData data: [String: String]) {
-        // TODO
+        // TODO: Actually sign
         guard let webView = tabManager.selectedTab?.webView else { return }
         webView.evaluateJavaScript("__firefox__.finishSign()", completionHandler: nil)
     }
