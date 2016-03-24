@@ -2749,8 +2749,25 @@ extension BrowserViewController: FindInPageBarDelegate, FindInPageHelperDelegate
 extension BrowserViewController: U2FHelperDelegate {
     func register(u2fHelper: U2FHelper, withData data: [String: String]) {
         // TODO: Actually register
+        /*
+        Useful references:
+        https://stackoverflow.com/questions/31531706/secaccesscontrolcreatewithflags-in-swift
+        https://developer.apple.com/library/ios/samplecode/KeychainTouchID/Introduction/Intro.html
         
-        // XXX: Invoke LocalAuthentication just to show we can
+        Steps:
+        - Authenticate the user
+        - EITHER
+            - Acquire wrapping key; generate key pair; encrypt private key
+            - Generate random label; generate key pair inside of Keychain
+        - return encrypted_key OR random_label
+        
+        [1] The calling origin / appID needs to be bound to the private key, either by
+        being included under the encryption or by being included in the key ID
+        
+        [2] Maybe be more functorial about this:
+            func DoWhenAuthenticated(func(authenticated, error))
+        */
+        
         guard let webView = tabManager.selectedTab?.webView else { return }
         let context = LAContext()
         let policy = LAPolicy.DeviceOwnerAuthenticationWithBiometrics
@@ -2758,18 +2775,36 @@ extension BrowserViewController: U2FHelperDelegate {
         if (context.canEvaluatePolicy(policy, error: nil)) {
             context.evaluatePolicy(policy, localizedReason: reason as String, reply:{ authenticated, error in
                 if (authenticated) {
+                    // TODO: Generate key label
+                    // TODO: Generate key pair with that label
+                    // TODO: Return label as a string
+                    
                     webView.evaluateJavaScript("__firefox__.finishRegister('authenticated')", completionHandler: nil)
                 } else {
+                    // TODO return an error
                     webView.evaluateJavaScript("__firefox__.finishRegister('not authenticated')", completionHandler: nil)
                 }
             })
         } else {
+            // TODO return an error
             webView.evaluateJavaScript("__firefox__.finishRegister('could not evaluate policy')", completionHandler: nil)
         }
     }
     
     func sign(u2fHelper: U2FHelper, withData data: [String: String]) {
         // TODO: Actually sign
+        /*
+        Steps:
+        - Authenticate the user
+        - EITHER
+            - Decrypt encrypted private key
+            - Use label to look up private key
+        - Sign with private key
+        - Return signature
+        
+        [1] Need to extract the origin / appID from the key handle and verify.
+        */
+        
         guard let webView = tabManager.selectedTab?.webView else { return }
         webView.evaluateJavaScript("__firefox__.finishSign()", completionHandler: nil)
     }

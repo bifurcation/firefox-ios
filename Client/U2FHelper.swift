@@ -2,6 +2,7 @@
 * License, v. 2.0. If a copy of the MPL was not distributed with this
 * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import FxA
 import Foundation
 import Shared
 import WebKit
@@ -11,6 +12,10 @@ private let log = Logger.syncLogger
 protocol U2FHelperDelegate: class {
     func register(u2fHelper: U2FHelper, withData data: [String: String]) // TODO
     func sign(u2fHelper: U2FHelper, withData data: [String: String]) // TODO
+}
+
+class OpenSSLToken {
+    // TODO
 }
 
 class U2FHelper: BrowserHelper {

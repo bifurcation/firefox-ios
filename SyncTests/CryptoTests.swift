@@ -2,6 +2,7 @@
  * License, v. 2.0. If a copy of the MPL was not distributed with this
  * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
+import FxA
 import UIKit
 import Shared
 import Storage
@@ -79,5 +80,45 @@ class CryptoTests: XCTestCase {
         } else {
             XCTFail("Encrypt failed.")
         }
+    }
+    
+    func testSignVerify() {
+        let cleartext = Bytes.decodeBase64(cleartextB64)
+        
+        // DSA
+        let dsa = DSAKeyPair.generateKeyPairWithSize(1024)
+        XCTAssertNotEqual(dsa, nil)
+        XCTAssertNotEqual(dsa.privateKey, nil)
+        XCTAssertNotEqual(dsa.publicKey, nil)
+        
+        let sigDSA = dsa.privateKey.signMessage(cleartext)
+        XCTAssertNotEqual(sigDSA, nil)
+        
+        let verDSA = dsa.publicKey.verifySignature(sigDSA, againstMessage: cleartext)
+        XCTAssertTrue(verDSA)
+        
+        // RSA
+        let rsa = DSAKeyPair.generateKeyPairWithSize(1024)
+        XCTAssertNotEqual(rsa, nil)
+        XCTAssertNotEqual(rsa.privateKey, nil)
+        XCTAssertNotEqual(rsa.publicKey, nil)
+        
+        let sigRSA = rsa.privateKey.signMessage(cleartext)
+        XCTAssertNotEqual(sigRSA, nil)
+        
+        let verRSA = rsa.publicKey.verifySignature(sigRSA, againstMessage: cleartext)
+        XCTAssertTrue(verRSA)
+        
+        // ECDSA
+        let ecdsa = ECDSAKeyPair.generateKeyPairForGroup(ECDSAGroup.P256)
+        XCTAssertNotEqual(ecdsa, nil)
+        XCTAssertNotEqual(ecdsa.privateKey, nil)
+        XCTAssertNotEqual(ecdsa.publicKey, nil)
+        
+        let sigECDSA = ecdsa.privateKey.signMessage(cleartext)
+        XCTAssertNotEqual(sigECDSA, nil)
+        
+        let verECDSA = ecdsa.publicKey.verifySignature(sigECDSA, againstMessage: cleartext)
+        XCTAssertTrue(verECDSA)
     }
 }
