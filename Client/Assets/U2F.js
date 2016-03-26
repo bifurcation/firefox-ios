@@ -4,31 +4,69 @@
 
 (function() {
     "use strict";
-    
+
+    // Only expose the API for secure origins.  Note that malicious code
+    // can still send to the webkit.messageHandlers.u2fHandler enpoint
+    // anyway, so we will need to guard in Swift as well.
+    if (window.location.protocol != "https:") {
+        return;
+    }
+
     if (!window.__firefox__) {
         window.__firefox__ = {};
     }
-    
-    function sendMessage(action) {
-        webkit.messageHandlers.u2fHandler.postMessage({action: action});
+
+    function sendMessage(obj) {
+        webkit.messageHandlers.u2fHandler.postMessage(obj);
     }
-    
+
+    var kActionRegister = "register";
+    var kActionSign = "sign";
+
+    var nextRegister = 0;
+    var nextSign = 0;
+    var callbacks = {};
+
     window.u2f = {
-        register: function() {
-            sendMessage("register");
+        register: function(registerRequests, signRequests, callback, opt_timeoutSeconds) {
+            var id = kActionRegister + (nextRegister++);
+            callbacks[id] = callback;
+
+            sendMessage({
+                action: kActionRegister,
+                id: id,
+                registerRequests: registerRequests,
+                signRequests: signRequests
+            });
         },
-        
-        sign: function() {
-            sendMessage("sign");
+
+        sign: function(signRequests, callback, opt_timeoutSeconds) {
+            var id = kActionSign + (nextSign++);
+            callbacks[id] = callback;
+
+            sendMessage({
+                action: kActionSign,
+                id: id,
+                signRequests: signRequests
+            });
+        }
+    };
+
+    window.__firefox__.u2f = {
+    finish: function finishRegister(obj) {
+        if (!("id" in obj)) {
+            console.error("No ID provided in object: " + JSON.stringify(obj));
+        } else if (!(obj.id in callbacks)) {
+            console.error("Unknown ID: " + obj.id);
+            for (id in callbacks) {
+                console.error("  Valid ID: " + id);
+            }
+        }
+
+        if (("id" in obj) && (obj.id in callbacks)) {
+            callbacks[obj.id](obj.result);
+            delete callbacks[obj.id];
         }
     }
-    
-    window.__firefox__.finishRegister = function (text) {
-        alert("DID REGISTER: "+text);
     };
-    
-    window.__firefox__.finishSign = function () {
-        alert("DID SIGN");
-    };
-    
 }) ();

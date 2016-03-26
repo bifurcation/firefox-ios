@@ -15,6 +15,8 @@ import Account
 import ReadingList
 import MobileCoreServices
 import LocalAuthentication
+import Sync
+import SwiftKeychainWrapper
 
 private let log = Logger.browserLogger
 
@@ -1460,10 +1462,13 @@ extension BrowserViewController: BrowserDelegate {
         }
         let spotlightHelper = SpotlightHelper(browser: browser, openURL: openURL)
         browser.addHelper(spotlightHelper, name: SpotlightHelper.name())
-        
-        let u2fHelper = U2FHelper(browser: browser)
-        u2fHelper.delegate = self
-        browser.addHelper(u2fHelper, name: U2FHelper.name())
+
+        // U2F requires iOS 9, for access to WKSecurityOrigin
+        if #available(iOS 9, *) {
+            let u2fHelper = U2FHelper(browser: browser)
+            u2fHelper.delegate = self
+            browser.addHelper(u2fHelper, name: U2FHelper.name())
+        }
     }
 
     func browser(browser: Browser, willDeleteWebView webView: WKWebView) {
@@ -2746,67 +2751,21 @@ extension BrowserViewController: FindInPageBarDelegate, FindInPageHelperDelegate
     }
 }
 
+@available(iOS 9, *)
 extension BrowserViewController: U2FHelperDelegate {
-    func register(u2fHelper: U2FHelper, withData data: [String: String]) {
-        // TODO: Actually register
-        /*
-        Useful references:
-        https://stackoverflow.com/questions/31531706/secaccesscontrolcreatewithflags-in-swift
-        https://developer.apple.com/library/ios/samplecode/KeychainTouchID/Introduction/Intro.html
-        
-        Steps:
-        - Authenticate the user
-        - EITHER
-            - Acquire wrapping key; generate key pair; encrypt private key
-            - Generate random label; generate key pair inside of Keychain
-        - return encrypted_key OR random_label
-        
-        [1] The calling origin / appID needs to be bound to the private key, either by
-        being included under the encryption or by being included in the key ID
-        
-        [2] Maybe be more functorial about this:
-            func DoWhenAuthenticated(func(authenticated, error))
-        */
-        
-        guard let webView = tabManager.selectedTab?.webView else { return }
-        let context = LAContext()
-        let policy = LAPolicy.DeviceOwnerAuthenticationWithBiometrics
-        let reason = "none"
-        if (context.canEvaluatePolicy(policy, error: nil)) {
-            context.evaluatePolicy(policy, localizedReason: reason as String, reply:{ authenticated, error in
-                if (authenticated) {
-                    // TODO: Generate key label
-                    // TODO: Generate key pair with that label
-                    // TODO: Return label as a string
-                    
-                    webView.evaluateJavaScript("__firefox__.finishRegister('authenticated')", completionHandler: nil)
-                } else {
-                    // TODO return an error
-                    webView.evaluateJavaScript("__firefox__.finishRegister('not authenticated')", completionHandler: nil)
-                }
-            })
-        } else {
-            // TODO return an error
-            webView.evaluateJavaScript("__firefox__.finishRegister('could not evaluate policy')", completionHandler: nil)
+    func u2fFinish(id id: String, response: U2FResponse) {
+        NSLog("Entered u2fFinish: \(id)")
+        guard let json = response.toJSON() else {
+            NSLog("Failed to stringify U2F response")
+            return
         }
-    }
-    
-    func sign(u2fHelper: U2FHelper, withData data: [String: String]) {
-        // TODO: Actually sign
-        /*
-        Steps:
-        - Authenticate the user
-        - EITHER
-            - Decrypt encrypted private key
-            - Use label to look up private key
-        - Sign with private key
-        - Return signature
-        
-        [1] Need to extract the origin / appID from the key handle and verify.
-        */
-        
-        guard let webView = tabManager.selectedTab?.webView else { return }
-        webView.evaluateJavaScript("__firefox__.finishSign()", completionHandler: nil)
+
+        guard let webView = tabManager.selectedTab?.webView else {
+            NSLog("Failed to get webView")
+            return
+        }
+        NSLog("__firefox__.u2f.finish({id:\"\(id)\",result:\(json)});")
+        webView.evaluateJavaScript("__firefox__.u2f.finish({id:\"\(id)\",result:\(json)});", completionHandler: nil)
     }
 }
 
