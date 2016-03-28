@@ -14,9 +14,6 @@ import Alamofire
 import Account
 import ReadingList
 import MobileCoreServices
-import LocalAuthentication
-import Sync
-import SwiftKeychainWrapper
 
 private let log = Logger.browserLogger
 
