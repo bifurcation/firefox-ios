@@ -28,26 +28,29 @@
     var callbacks = {};
 
     window.u2f = {
-        register: function(registerRequests, signRequests, callback, opt_timeoutSeconds) {
+        register: function(appID, registerRequests, registeredKeys, callback, opt_timeoutSeconds) {
             var id = kActionRegister + (nextRegister++);
             callbacks[id] = callback;
 
             sendMessage({
                 action: kActionRegister,
                 id: id,
+                appID: appID,
                 registerRequests: registerRequests,
-                signRequests: signRequests
+                registeredKeys: registeredKeys
             });
         },
 
-        sign: function(signRequests, callback, opt_timeoutSeconds) {
+        sign: function(appID, challenge, registeredKeys, callback, opt_timeoutSeconds) {
             var id = kActionSign + (nextSign++);
             callbacks[id] = callback;
 
             sendMessage({
                 action: kActionSign,
                 id: id,
-                signRequests: signRequests
+                appID: appID,
+                challenge: challenge,
+                registeredKeys: registeredKeys
             });
         }
     };

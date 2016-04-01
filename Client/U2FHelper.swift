@@ -39,54 +39,47 @@ protocol U2FResponse {
     func toJSON() -> String?
 }
 
+struct U2FRegisteredKey {
+    var version: String
+    var keyHandle: String
+
+    init?(obj: AnyObject) {
+        guard let dict = obj as? [String:String] else { return nil }
+        guard let version = dict["version"] as String? else { return nil }
+        guard let keyHandle = dict["keyHandle"] as String? else { return nil }
+
+        self.version = version
+        self.keyHandle = keyHandle
+    }
+}
+
 struct U2FRegisterRequest {
     var version: String
     var challenge: String
-    var appId: String
 
     init?(obj: AnyObject) {
         guard let dict = obj as? [String:String] else { return nil }
         guard let version = dict["version"] as String? else { return nil }
         guard let challenge = dict["challenge"] as String? else { return nil }
-        guard let appId = dict["appId"] as String? else { return nil }
 
         self.version = version
         self.challenge = challenge
-        self.appId = appId
     }
 }
 
 struct U2FRegisterResponse: U2FResponse {
+    var version: String
     var registrationData : String
     var clientData: String
 
     func toJSON() -> String? {
         let value: [String:String] = [
+            "version": self.version,
             "registrationData": self.registrationData,
             "clientData": self.clientData
         ]
         let data = try! NSJSONSerialization.dataWithJSONObject(value, options: .PrettyPrinted)
         return NSString(data: data, encoding: NSUTF8StringEncoding) as String?
-    }
-}
-
-struct U2FSignRequest {
-    var version: String
-    var challenge: String
-    var keyHandle: String
-    var appId: String
-
-    init?(obj: AnyObject) {
-        guard let dict = obj as? [String:String] else { return nil }
-        guard let version = dict["version"] as String? else { return nil }
-        guard let challenge = dict["challenge"] as String? else { return nil }
-        guard let keyHandle = dict["keyHandle"] as String? else { return nil }
-        guard let appId = dict["appId"] as String? else { return nil }
-
-        self.version = version
-        self.challenge = challenge
-        self.keyHandle = keyHandle
-        self.appId = appId
     }
 }
 
@@ -127,31 +120,23 @@ struct U2FDOMRequest {
     var origin: WKSecurityOrigin
     var action: String
     var id: String
+    var appID: String
+    var challenge: String?
     var registerRequests: [U2FRegisterRequest]
-    var signRequests: [U2FSignRequest]
+    var registeredKeys: [U2FRegisteredKey]
 
     init?(message: WKScriptMessage) {
-        log.debug("Entered U2FDOMRequest.init?()")
+        guard let data = message.body as? [String: AnyObject] else { return nil }
+        guard let id = data[kTagID] as? String else { return nil }
+        guard let action = data[kTagAction] as? String else { return nil }
+        guard let appID = data["appID"] as? String else { return nil }
 
         self.origin = message.frameInfo.securityOrigin
-        self.action = ""
-        self.id = ""
-
-        guard let data = message.body as? [String: AnyObject] else {
-            log.debug("Could not convert object to [String:AnyObject]")
-            return nil
-        }
-
-        guard let id = data[kTagID] as? String else {
-            log.debug("Could not capture id")
-            return nil
-        }
-        guard let action = data[kTagAction] as? String else {
-            log.debug("Could not capture action")
-            return nil
-        }
         self.id = id
         self.action = action
+        self.appID = appID
+
+        self.challenge = data["challenge"] as? String
 
         self.registerRequests = [U2FRegisterRequest]()
         if let regRequests = data["registerRequests"] as? [AnyObject] {
@@ -161,12 +146,17 @@ struct U2FDOMRequest {
             }
         }
 
-        self.signRequests = [U2FSignRequest]()
-        if let sigRequests = data["signRequests"] as? [AnyObject] {
-            for req in sigRequests {
-                guard let sigReq = U2FSignRequest(obj: req) else { continue }
-                self.signRequests.append(sigReq)
+        self.registeredKeys = [U2FRegisteredKey]()
+        if let regKeys = data["registeredKeys"] as? [AnyObject] {
+            for regKey in regKeys {
+                guard let key = U2FRegisteredKey(obj: regKey) else { continue }
+                self.registeredKeys.append(key)
             }
+        }
+
+        // Check for required fields
+        if (action == kActionSign) && (self.challenge == nil) {
+            return nil
         }
     }
 }
@@ -208,14 +198,14 @@ class U2FHelper: BrowserHelper {
     private func register(request: U2FDOMRequest, withMasterKeyBundle keys: KeyBundle) -> U2FResponse {
         return U2FErrorResponse(
             errorCode: .CONFIGURATION_UNSUPPORTED,
-            errorMessage: "Register method unimplemented \(request.registerRequests.count) \(request.signRequests.count)"
+            errorMessage: "Register method unimplemented \(request.registerRequests.count) \(request.registeredKeys.count)"
         )
     }
 
     private func sign(request: U2FDOMRequest, withMasterKeyBundle keys: KeyBundle) -> U2FResponse {
         return U2FErrorResponse(
             errorCode: .CONFIGURATION_UNSUPPORTED,
-            errorMessage: "Sign method unimplemented \(request.registerRequests.count) \(request.signRequests.count)"
+            errorMessage: "Sign method unimplemented \(request.registerRequests.count) \(request.registeredKeys.count)"
         )
     }
 
