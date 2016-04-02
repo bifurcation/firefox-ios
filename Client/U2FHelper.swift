@@ -169,7 +169,24 @@ protocol U2FHelperDelegate: class {
 }
 
 class OpenSSLToken {
-    // TODO
+    static func knownKey(keyHandle: String, forAppID appID: String, masterKeyBundle keys: KeyBundle) -> Bool {
+        // TODO
+        return false
+    }
+
+    static func supportedVersion(version: String) -> Bool {
+        return version == "U2F_V2"
+    }
+
+    static func register(clientParam: NSData, appParam: NSData, masterKeyBundle keys: KeyBundle) -> String {
+        // TODO
+        return ""
+    }
+
+    static func sign(keyHandle: String, clientParam: NSData, appParam: NSData, masterKeyBundle keys: KeyBundle) -> String {
+        // TODO
+        return ""
+    }
 }
 
 
@@ -195,18 +212,87 @@ class U2FHelper: BrowserHelper {
         return "u2fHandler"
     }
 
-    private func register(request: U2FDOMRequest, withMasterKeyBundle keys: KeyBundle) -> U2FResponse {
-        return U2FErrorResponse(
-            errorCode: .CONFIGURATION_UNSUPPORTED,
-            errorMessage: "Register method unimplemented \(request.registerRequests.count) \(request.registeredKeys.count)"
-        )
+    private func validAppID(appID: String, forOrigin origin: WKSecurityOrigin) -> Bool {
+        // TODO
+        return true
     }
 
-    private func sign(request: U2FDOMRequest, withMasterKeyBundle keys: KeyBundle) -> U2FResponse {
-        return U2FErrorResponse(
-            errorCode: .CONFIGURATION_UNSUPPORTED,
-            errorMessage: "Sign method unimplemented \(request.registerRequests.count) \(request.registeredKeys.count)"
-        )
+    private func assembleClientData(type: String, challenge: String) -> String {
+        // TODO
+        return ""
+    }
+
+    private func sha256(string : String) -> NSData {
+        let data = string.dataUsingEncoding(NSUTF8StringEncoding)!
+        var hash = [UInt8](count: Int(CC_SHA256_DIGEST_LENGTH), repeatedValue: 0)
+        CC_SHA256(data.bytes, CC_LONG(data.length), &hash)
+        let res = NSData(bytes: hash, length: Int(CC_SHA256_DIGEST_LENGTH))
+        return res
+    }
+
+    private func register(request: U2FDOMRequest, masterKeyBundle keys: KeyBundle) -> U2FResponse {
+        if !validAppID(request.appID, forOrigin: request.origin) {
+            return U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "Invalid appID")
+        }
+
+        for key in request.registeredKeys {
+            if OpenSSLToken.knownKey(key.keyHandle, forAppID: request.appID, masterKeyBundle: keys) {
+                return U2FErrorResponse(errorCode: .DEVICE_INELIGIBLE, errorMessage: "Already registered")
+            }
+        }
+
+        var version: String?
+        var clientData: String?
+        var responseData: String?
+        for req in request.registerRequests {
+            guard OpenSSLToken.supportedVersion(req.version) else { continue }
+            version = req.version
+
+            clientData = assembleClientData("navigator.id.finishEnrollment", challenge: req.challenge)
+            let clientParam = sha256(clientData!)
+            let appParam = sha256(request.appID)
+
+            responseData = OpenSSLToken.register(clientParam, appParam: appParam, masterKeyBundle: keys)
+            break
+        }
+
+        guard version != nil && clientData != nil && responseData != nil else {
+            return U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "No acceptable request found")
+        }
+
+        return U2FRegisterResponse(version: version!, registrationData: responseData!, clientData: clientData!)
+    }
+
+    private func sign(request: U2FDOMRequest, masterKeyBundle keys: KeyBundle) -> U2FResponse {
+        if !validAppID(request.appID, forOrigin: request.origin) {
+            return U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "Invalid appID")
+        }
+
+        guard request.challenge != nil else {
+            return U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "No challenge provided")
+        }
+
+        var keyHandle: String?
+        var clientData: String?
+        var signatureData: String?
+        for key in request.registeredKeys {
+            guard OpenSSLToken.supportedVersion(key.version) else { continue }
+            guard OpenSSLToken.knownKey(key.keyHandle, forAppID: request.appID, masterKeyBundle: keys) else { continue }
+
+            keyHandle = key.keyHandle
+            clientData = assembleClientData("navigator.id.getAssertion", challenge: request.challenge!)
+            let clientParam = sha256(clientData!)
+            let appParam = sha256(request.appID)
+
+            signatureData = OpenSSLToken.sign(key.keyHandle, clientParam: clientParam, appParam: appParam, masterKeyBundle: keys)
+        }
+
+        guard keyHandle != nil && clientData != nil && signatureData != nil else {
+            return U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "No usable key found")
+
+        }
+
+        return U2FSignResponse(keyHandle: keyHandle!, signatureData: signatureData!, clientData: clientData!)
     }
 
     func userContentController(userContentController: WKUserContentController, didReceiveScriptMessage message: WKScriptMessage) {
@@ -279,10 +365,10 @@ class U2FHelper: BrowserHelper {
         switch data.action {
         case kActionRegister:
             log.debug("U2F register")
-            response = register(data, withMasterKeyBundle: keys)
+            response = register(data, masterKeyBundle: keys)
         case kActionSign:
             log.debug("U2F sign")
-            response = sign(data, withMasterKeyBundle: keys)
+            response = sign(data, masterKeyBundle: keys)
         default:
             log.debug("Unknown action")
             response = U2FErrorResponse(errorCode: .OTHER_ERROR, errorMessage: "Internal error")
