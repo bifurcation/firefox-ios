@@ -169,23 +169,67 @@ protocol U2FHelperDelegate: class {
 }
 
 class OpenSSLToken {
-    static func knownKey(keyHandle: String, forAppID appID: String, masterKeyBundle keys: KeyBundle) -> Bool {
+    private func getKey(name: String) -> KeyBundle {
+        if KeychainWrapper.hasValueForKey(kMasterKeyName) {
+            let keyData = KeychainWrapper.stringForKey(kMasterKeyName)!
+            log.debug("Fetched key data: \(keyData)")
+            let split = keyData.startIndex.advancedBy(kMasterEncKeyLength)
+            let enc = keyData.substringToIndex(split)
+            let mac = keyData.substringFromIndex(split)
+            return KeyBundle(encKeyB64: enc, hmacKeyB64: mac)
+        } else {
+            let keys = KeyBundle.random()
+            let rawKeys = keys.asPair()
+            let totalKey = rawKeys[0] + rawKeys[1]
+            log.debug("Generated key data: \(totalKey)")
+            KeychainWrapper.setString(totalKey, forKey: kMasterKeyName)
+            return keys
+        }
+    }
+
+    private func authenticate(result: (Bool -> ())) {
+        // We manage the TouchID prompt ourselves (instead of using, say AppAuthenticator)
+        // because we really want it to appear on every call.
+        let context = LAContext()
+        let policy = LAPolicy.DeviceOwnerAuthenticationWithBiometrics
+        if (context.canEvaluatePolicy(policy, error: nil)) {
+            context.evaluatePolicy(policy, localizedReason: kAuthenticationReason, reply:{ authenticated, error in
+                log.debug("Authentication result: \(authenticated) \(error)")
+                result(authenticated)
+            })
+        } else {
+            result(false)
+        }
+    }
+
+    func knownKey(keyHandle: String, forAppID appID: String) -> Bool {
         // TODO
         return false
     }
 
-    static func supportedVersion(version: String) -> Bool {
+    func supportedVersion(version: String) -> Bool {
         return version == "U2F_V2"
     }
 
-    static func register(clientParam: NSData, appParam: NSData, masterKeyBundle keys: KeyBundle) -> String {
-        // TODO
-        return ""
+    func register(clientParam: NSData, appParam: NSData, result: (String -> ())) {
+        self.authenticate() { authenticated in
+            self.registerInner(authenticated, clientParam: clientParam, appParam: appParam, result: result)
+        }
     }
 
-    static func sign(keyHandle: String, clientParam: NSData, appParam: NSData, masterKeyBundle keys: KeyBundle) -> String {
+    private func registerInner(authenticated: Bool, clientParam: NSData, appParam: NSData, result: (String -> ())) {
         // TODO
-        return ""
+    }
+
+    func sign(keyHandle: String, clientParam: NSData, appParam: NSData, result: (String -> ())) {
+        self.authenticate() { authenticated in
+            self.signInner(authenticated, keyHandle: keyHandle, clientParam: clientParam, appParam: appParam, result: result)
+        }
+    }
+
+    private func signInner(authenticated: Bool, keyHandle: String, clientParam: NSData, appParam: NSData, result: (String -> ())) {
+        // TODO
+        return
     }
 }
 
@@ -230,69 +274,76 @@ class U2FHelper: BrowserHelper {
         return res
     }
 
-    private func register(request: U2FDOMRequest, masterKeyBundle keys: KeyBundle) -> U2FResponse {
+    private func register(request: U2FDOMRequest, result: ((U2FResponse) -> ())) {
+        let token = OpenSSLToken()
+
         if !validAppID(request.appID, forOrigin: request.origin) {
-            return U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "Invalid appID")
+            dispatch_async(dispatch_get_main_queue()) {
+                result(U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "Invalid appID"))
+            }
+            return
         }
 
         for key in request.registeredKeys {
-            if OpenSSLToken.knownKey(key.keyHandle, forAppID: request.appID, masterKeyBundle: keys) {
-                return U2FErrorResponse(errorCode: .DEVICE_INELIGIBLE, errorMessage: "Already registered")
+            if token.knownKey(key.keyHandle, forAppID: request.appID) {
+                dispatch_async(dispatch_get_main_queue()) {
+                    result(U2FErrorResponse(errorCode: .DEVICE_INELIGIBLE, errorMessage: "Already registered"))
+                }
+                return
             }
         }
 
-        var version: String?
-        var clientData: String?
-        var responseData: String?
         for req in request.registerRequests {
-            guard OpenSSLToken.supportedVersion(req.version) else { continue }
-            version = req.version
+            guard token.supportedVersion(req.version) else { continue }
 
-            clientData = assembleClientData("navigator.id.finishEnrollment", challenge: req.challenge)
-            let clientParam = sha256(clientData!)
+            let clientData = assembleClientData("navigator.id.finishEnrollment", challenge: req.challenge)
+            let clientParam = sha256(clientData)
             let appParam = sha256(request.appID)
 
-            responseData = OpenSSLToken.register(clientParam, appParam: appParam, masterKeyBundle: keys)
-            break
+            token.register(clientParam, appParam: appParam, result: { (responseData) in
+                 result(U2FRegisterResponse(version: req.version, registrationData: responseData, clientData: clientData))
+            })
+            return
         }
 
-        guard version != nil && clientData != nil && responseData != nil else {
-            return U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "No acceptable request found")
+        dispatch_async(dispatch_get_main_queue()) {
+            result(U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "No compatible devices"))
         }
-
-        return U2FRegisterResponse(version: version!, registrationData: responseData!, clientData: clientData!)
     }
 
-    private func sign(request: U2FDOMRequest, masterKeyBundle keys: KeyBundle) -> U2FResponse {
+    private func sign(request: U2FDOMRequest, result: ((U2FResponse) -> ())) {
+        let token = OpenSSLToken()
+
         if !validAppID(request.appID, forOrigin: request.origin) {
-            return U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "Invalid appID")
+            dispatch_async(dispatch_get_main_queue()) {
+                result(U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "Invalid appID"))
+            }
         }
 
         guard request.challenge != nil else {
-            return U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "No challenge provided")
+            dispatch_async(dispatch_get_main_queue()) {
+                result(U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "No challenge provided"))
+            }
+            return
         }
 
-        var keyHandle: String?
-        var clientData: String?
-        var signatureData: String?
         for key in request.registeredKeys {
-            guard OpenSSLToken.supportedVersion(key.version) else { continue }
-            guard OpenSSLToken.knownKey(key.keyHandle, forAppID: request.appID, masterKeyBundle: keys) else { continue }
+            guard token.supportedVersion(key.version) else { continue }
+            guard token.knownKey(key.keyHandle, forAppID: request.appID) else { continue }
 
-            keyHandle = key.keyHandle
-            clientData = assembleClientData("navigator.id.getAssertion", challenge: request.challenge!)
-            let clientParam = sha256(clientData!)
+            let clientData = assembleClientData("navigator.id.getAssertion", challenge: request.challenge!)
+            let clientParam = sha256(clientData)
             let appParam = sha256(request.appID)
 
-            signatureData = OpenSSLToken.sign(key.keyHandle, clientParam: clientParam, appParam: appParam, masterKeyBundle: keys)
+            token.sign(key.keyHandle, clientParam: clientParam, appParam: appParam, result: { signatureData in
+                result(U2FSignResponse(keyHandle: key.keyHandle, signatureData: signatureData, clientData: clientData))
+            })
+            return
         }
 
-        guard keyHandle != nil && clientData != nil && signatureData != nil else {
-            return U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "No usable key found")
-
+        dispatch_async(dispatch_get_main_queue()) {
+            result(U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "No usable key found"))
         }
-
-        return U2FSignResponse(keyHandle: keyHandle!, signatureData: signatureData!, clientData: clientData!)
     }
 
     func userContentController(userContentController: WKUserContentController, didReceiveScriptMessage message: WKScriptMessage) {
@@ -320,61 +371,20 @@ class U2FHelper: BrowserHelper {
             delegate?.u2fFinish(id: request.id, response: U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "U2F is only supported on HTTPS origins"))
         }
 
-        // Display the TouchID prompt
-        // We manage the TouchID prompt ourselves (instead of using, say AppAuthenticator)
-        // because we really want it to appear on every call.
-        let context = LAContext()
-        let policy = LAPolicy.DeviceOwnerAuthenticationWithBiometrics
-        let unauthenticatedError = U2FErrorResponse(errorCode: .OTHER_ERROR, errorMessage: "Unauthenticated")
-        if (context.canEvaluatePolicy(policy, error: nil)) {
-            context.evaluatePolicy(policy, localizedReason: kAuthenticationReason, reply:{ authenticated, error in
-                log.debug("Authentication result: \(authenticated) \(error)")
-                if !authenticated {
-                    self.delegate?.u2fFinish(id: request.id, response: unauthenticatedError)
-                    return
-                }
-
-                self.performU2FAction(authenticated, data: request)
-            })
-        } else {
-            self.delegate?.u2fFinish(id: request.id, response: unauthenticatedError)
-        }
-    }
-
-    func performU2FAction(authenticated: Bool, data: U2FDOMRequest) {
-
-        // Fetch or generate the master key
-        var keys: KeyBundle
-        if KeychainWrapper.hasValueForKey(kMasterKeyName) {
-            let keyData = KeychainWrapper.stringForKey(kMasterKeyName)!
-            log.debug("Fetched key data: \(keyData)")
-            let split = keyData.startIndex.advancedBy(kMasterEncKeyLength)
-            let enc = keyData.substringToIndex(split)
-            let mac = keyData.substringFromIndex(split)
-            keys = KeyBundle(encKeyB64: enc, hmacKeyB64: mac)
-        } else {
-            keys = KeyBundle.random()
-            let rawKeys = keys.asPair()
-            let totalKey = rawKeys[0] + rawKeys[1]
-            log.debug("Generated key data: \(totalKey)")
-            KeychainWrapper.setString(totalKey, forKey: kMasterKeyName)
-        }
-
         // Perform the required action
-        var response: U2FResponse
-        switch data.action {
+        switch request.action {
         case kActionRegister:
             log.debug("U2F register")
-            response = register(data, masterKeyBundle: keys)
+            register(request) { response in self.delegate?.u2fFinish(id: request.id, response: response) }
         case kActionSign:
             log.debug("U2F sign")
-            response = sign(data, masterKeyBundle: keys)
+            sign(request) { response in self.delegate?.u2fFinish(id: request.id, response: response) }
         default:
             log.debug("Unknown action")
-            response = U2FErrorResponse(errorCode: .OTHER_ERROR, errorMessage: "Internal error")
+            dispatch_async(dispatch_get_main_queue()) {
+                let response  = U2FErrorResponse(errorCode: .OTHER_ERROR, errorMessage: "Internal error")
+                self.delegate?.u2fFinish(id: request.id, response: response)
+            }
         }
-
-        // Have the delegate return the result to JS
-        delegate?.u2fFinish(id: data.id, response: response)
     }
 }
