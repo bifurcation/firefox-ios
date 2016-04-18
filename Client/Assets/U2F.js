@@ -27,8 +27,11 @@
     var nextSign = 0;
     var callbacks = {};
 
-    window.u2f = {
-        register: function(appID, registerRequests, registeredKeys, callback, opt_timeoutSeconds) {
+    window.u2f = {}
+
+    Object.defineProperty(window.u2f, "register", {
+        writable: false,
+        value: function(appID, registerRequests, registeredKeys, callback, opt_timeoutSeconds) {
             var id = kActionRegister + (nextRegister++);
             callbacks[id] = callback;
 
@@ -39,9 +42,12 @@
                 registerRequests: registerRequests,
                 registeredKeys: registeredKeys
             });
-        },
+        }
+    });
 
-        sign: function(appID, challenge, registeredKeys, callback, opt_timeoutSeconds) {
+    Object.defineProperty(window.u2f, "sign", {
+        writable: false,
+        value: function(appID, challenge, registeredKeys, callback, opt_timeoutSeconds) {
             var id = kActionSign + (nextSign++);
             callbacks[id] = callback;
 
@@ -53,10 +59,12 @@
                 registeredKeys: registeredKeys
             });
         }
-    };
+    });
 
     window.__firefox__.u2f = {
     finish: function finishRegister(obj) {
+        console.log("U2F result: " + JSON.stringify(obj));
+
         if (!("id" in obj)) {
             console.error("No ID provided in object: " + JSON.stringify(obj));
         } else if (!(obj.id in callbacks)) {

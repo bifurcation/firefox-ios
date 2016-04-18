@@ -202,7 +202,7 @@ const char* kECDSAP256Algorithm = "ECDSA-P256";
         return NULL;
     }
 
-    unsigned char* der;
+    unsigned char* der = NULL;
     int len = i2d_X509(x509, &der);
     if (len == 0){
         EVP_PKEY_free(pkey);

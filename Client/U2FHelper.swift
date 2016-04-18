@@ -403,9 +403,21 @@ class U2FHelper: BrowserHelper {
         return true
     }
 
-    private func assembleClientData(type: String, challenge: String) -> String {
-        // TODO
-        return ""
+    // dictionary ClientData {
+    //    DOMString             typ;
+    //    DOMString             challenge;
+    //    DOMString             origin;
+    //    (DOMString or JwkKey) cid_pubkey;
+    // };
+    private func assembleClientData(type: String, challenge: String, origin: WKSecurityOrigin) -> String {
+        let originString = origin.`protocol` + "://" + origin.host + ":" + String(origin.port)
+        let clientData: [String:String] = [
+            "typ": type,
+            "challenge": challenge,
+            "origin": originString
+        ]
+        let json = try! NSJSONSerialization.dataWithJSONObject(clientData, options: .PrettyPrinted)
+        return String(NSString(data: json, encoding: NSUTF8StringEncoding)!)
     }
 
     private func register(request: U2FDOMRequest, result: ((U2FResponse) -> ())) {
@@ -430,7 +442,7 @@ class U2FHelper: BrowserHelper {
         for req in request.registerRequests {
             guard token.supportedVersion(req.version) else { continue }
 
-            let clientData = assembleClientData("navigator.id.finishEnrollment", challenge: req.challenge)
+            let clientData = assembleClientData("navigator.id.finishEnrollment", challenge: req.challenge, origin: request.origin)
             let challengeParam = clientData.dataUsingEncoding(NSUTF8StringEncoding)!.SHA256Hash()
             let appParam = request.appID.dataUsingEncoding(NSUTF8StringEncoding)!.SHA256Hash()
 
@@ -467,7 +479,7 @@ class U2FHelper: BrowserHelper {
             guard token.supportedVersion(key.version) else { continue }
             guard token.knownKey(key.keyHandle, forAppID: request.appID) else { continue }
 
-            let clientData = assembleClientData("navigator.id.getAssertion", challenge: request.challenge!)
+            let clientData = assembleClientData("navigator.id.getAssertion", challenge: request.challenge!, origin: request.origin)
             let clientParam = clientData.dataUsingEncoding(NSUTF8StringEncoding)!.SHA256Hash()
             let appParam = request.appID.dataUsingEncoding(NSUTF8StringEncoding)!.SHA256Hash()
 
