@@ -120,5 +120,9 @@ class CryptoTests: XCTestCase {
         
         let verECDSA = ecdsa.publicKey.verifySignature(sigECDSA, againstMessage: cleartext)
         XCTAssertTrue(verECDSA)
+
+        // Just test that this runs and produces non-empty output
+        let cert = ecdsa.privateKey.selfSignedCertificateWithName("Test cert", slack: 0, lifetime: 60 * 60)
+        XCTAssertNotNil(cert)
     }
 }

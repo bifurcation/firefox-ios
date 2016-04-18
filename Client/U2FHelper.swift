@@ -30,6 +30,12 @@ private let kMACLength: Int = 32
 
 private let kParamLength: Int = 32
 
+// These should be kept in sync with nsNSSU2FToken.cpp in Gecko
+private let kAttestCertSubjectName = "CN=Firefox for iOS U2F TouchID+Keychain Token"
+private let kOneDay: Int32 = 60 * 60 * 24
+private let kExpirationSlack = kOneDay
+private let kExpirationLifetime = kOneDay
+
 enum U2FErrorCode: Int {
     case OK = 0
     case OTHER_ERROR = 1
@@ -245,13 +251,13 @@ class OpenSSLToken {
         return version == "U2F_V2"
     }
 
-    func register(clientParam: NSData, appParam: NSData, result: (String -> ()), error: ((U2FErrorCode, String) -> ())) {
+    func register(challengeParam: NSData, appParam: NSData, result: (String -> ()), error: ((U2FErrorCode, String) -> ())) {
         self.authenticate() { authenticated in
-            self.registerInner(authenticated, clientParam: clientParam, appParam: appParam, result: result, error: error)
+            self.registerInner(authenticated, challengeParam: challengeParam, appParam: appParam, result: result, error: error)
         }
     }
 
-    private func registerInner(authenticated: Bool, clientParam: NSData, appParam: NSData, result: (String -> ()), error: ((U2FErrorCode, String) -> ())) {
+    private func registerInner(authenticated: Bool, challengeParam: NSData, appParam: NSData, result: (String -> ()), error: ((U2FErrorCode, String) -> ())) {
         guard authenticated else {
             result("{\"errorCode\":\"\(U2FErrorCode.OTHER_ERROR)\",\"errorMessage\":\"User presence test failed\"}")
             return
@@ -277,18 +283,30 @@ class OpenSSLToken {
 
         let pubBytes = ecdsa.publicKey.BinaryRepresentation()
 
-        // responseData = 0x05 || public[65] || keyHandleLength(1) || keyHandle
+        // Compute attestation certificate and signature
+        let attestationKeyPair = ECDSAKeyPair.generateKeyPairForGroup(.P256)
+        let attestationCert = attestationKeyPair.privateKey.selfSignedCertificateWithName(kAttestCertSubjectName, slack: kExpirationSlack, lifetime: kExpirationLifetime)
+
+        // attestationData = 0x00 || appParam[32] || challengeParam[32] || keyHandle[L] || public[65]
+        let attestationData = NSMutableData()
+        var attestationDataPrefix = 0x00
+        attestationData.appendBytes(&attestationDataPrefix, length: 1)
+        attestationData.appendData(appParam)
+        attestationData.appendData(challengeParam)
+        attestationData.appendData(keyHandle)
+        attestationData.appendData(pubBytes)
+        let attestationSig = attestationKeyPair.privateKey.signMessage(attestationData)
+
+        // responseData = 0x05 || public[65] || keyHandleLength[1] || keyHandle || attestationCert || attestationSignature
         let responseData = NSMutableData()
-        var prefix : UInt8 = 0x05
+        var responseDataPrefix : UInt8 = 0x05
         var keyHandleLen : UInt8 = UInt8(keyHandle.length)
-        responseData.appendBytes(&prefix, length: 1)
+        responseData.appendBytes(&responseDataPrefix, length: 1)
         responseData.appendData(pubBytes)
         responseData.appendBytes(&keyHandleLen, length: 1)
         responseData.appendData(keyHandle)
-
-        // TODO
-        // - generate attestation cert
-        // - compute attestation value
+        responseData.appendData(attestationCert)
+        responseData.appendData(attestationSig)
 
         result(responseData.base64URLEncodedStringWithOptions(NSDataBase64EncodingOptions()))
     }

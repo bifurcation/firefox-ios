@@ -6,6 +6,7 @@
 #include <openssl/ec.h>
 #include <openssl/evp.h>
 #include <openssl/err.h>
+#include <openssl/x509.h>
 
 #include "NSData+Utils.h"
 #include "NSData+SHA.h"
@@ -165,6 +166,51 @@ const char* kECDSAP256Algorithm = "ECDSA-P256";
     }
     
     return signature;
+}
+
+- (NSData*) selfSignedCertificateWithName: (NSString*) name slack: (int) slack lifetime: (int) lifetime
+{
+    X509* x509 = X509_new();
+    if (!x509) {
+        return nil;
+    }
+
+    /* Set the serial number. */
+    ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
+
+    X509_gmtime_adj(X509_get_notBefore(x509), -1 * slack);
+    X509_gmtime_adj(X509_get_notAfter(x509), lifetime);
+
+    EVP_PKEY *pkey = EVP_PKEY_new();
+    if (pkey == NULL) {
+        return nil;
+    }
+    if (!EVP_PKEY_set1_EC_KEY(pkey, _ecdsa)) {
+        EVP_PKEY_free(pkey);
+        return nil;
+    }
+    X509_set_pubkey(x509, pkey);
+
+    X509_NAME* subject = X509_get_subject_name(x509);
+    X509_NAME_add_entry_by_txt(subject, "CN", MBSTRING_ASC, (unsigned char *)[name cStringUsingEncoding:NSUTF8StringEncoding], -1, -1, 0);
+    X509_set_issuer_name(x509, subject);
+
+    if(!X509_sign(x509, pkey, EVP_sha256()))
+    {
+        EVP_PKEY_free(pkey);
+        X509_free(x509);
+        return NULL;
+    }
+
+    unsigned char* der;
+    int len = i2d_X509(x509, &der);
+    if (len == 0){
+        EVP_PKEY_free(pkey);
+        X509_free(x509);
+        return NULL;
+    }
+
+    return [[NSData alloc] initWithBytesNoCopy:der length:len];
 }
 
 @end

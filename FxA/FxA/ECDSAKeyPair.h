@@ -28,6 +28,8 @@ typedef NS_ENUM(NSInteger, ECDSAGroup) {
 - (instancetype) initWithBinaryRepresentation: (NSData*) data;
 - (NSData*) BinaryRepresentation;
 
+- (NSData*) selfSignedCertificateWithName: (NSString*) name slack: (int) slack lifetime: (int) lifetime;
+
 @end
 
 
