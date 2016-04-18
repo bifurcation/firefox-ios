@@ -22,12 +22,22 @@ typedef NS_ENUM(NSInteger, ECDSAGroup) {
 
 
 @interface ECDSAPrivateKey : PrivateKey
+
 - (instancetype) initWithPrivateKey: (CHNumber*) d point: (ECDSAPoint*) p group: (ECDSAGroup) group;
+
+- (instancetype) initWithBinaryRepresentation: (NSData*) data;
+- (NSData*) BinaryRepresentation;
+
 @end
 
 
 @interface ECDSAPublicKey : PublicKey
+
 - (instancetype) initWithPublicKey: (ECDSAPoint*) p group: (ECDSAGroup) group;
+
+- (instancetype) initWithBinaryRepresentation: (NSData*) data;
+- (NSData*) BinaryRepresentation;
+
 @end
 
 

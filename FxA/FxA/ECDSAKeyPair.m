@@ -18,11 +18,53 @@
 
 const char* kECDSAP256Algorithm = "ECDSA-P256";
 
+#define kECDSAFieldBytes 32
+
 @implementation ECDSAPoint
 @end
 
 @implementation ECDSAPrivateKey {
     EC_KEY *_ecdsa;
+}
+
+- (id) initWithJSONRepresentation: (NSDictionary*) object
+{
+    CHNumber *d = [CHNumber numberWithString: object[@"d"]];
+    CHNumber *x = [CHNumber numberWithString: object[@"x"]];
+    CHNumber *y = [CHNumber numberWithString: object[@"y"]];
+    if (d == nil || x == nil || y == nil) {
+        return nil;
+    }
+
+    ECDSAPoint *pt = [ECDSAPoint new];
+    pt.x = x;
+    pt.y = y;
+
+    return [self initWithPrivateKey: d point: pt group: ECDSAGroupP256];
+}
+
+- (instancetype) initWithBinaryRepresentation: (NSData*) data group: (ECDSAGroup) group;
+{
+    if (group != ECDSAGroupP256) {
+        return self;
+    }
+
+    if ((self = [super init]) != nil) {
+        _ecdsa = EC_KEY_new_by_curve_name(NID_P256);
+
+        EC_GROUP *ecgroup = EC_KEY_get0_group(_ecdsa);
+        EC_POINT *pub = EC_KEY_get0_public_key(_ecdsa);
+        BIGNUM *priv = EC_KEY_get0_private_key(_ecdsa);
+
+        EC_POINT_oct2point(ecgroup, pub, [data bytes], [data length], NULL);
+        EC_KEY_set_public_key(_ecdsa, pub);
+
+        size_t pubLen = EC_POINT_point2oct(ecgroup, pub, POINT_CONVERSION_UNCOMPRESSED, NULL, 0, NULL);
+        if (pubLen < [data length]) {
+            BN_bin2bn([data bytes] + pubLen, [data length] - pubLen, priv);
+        }
+    }
+    return self;
 }
 
 - (instancetype) initWithPrivateKey: (CHNumber*) d point: (ECDSAPoint*) p group: (ECDSAGroup) group;
@@ -41,6 +83,49 @@ const char* kECDSAP256Algorithm = "ECDSA-P256";
         EC_KEY_free(_ecdsa);
         _ecdsa = NULL;
     }
+}
+
+- (NSDictionary*) JSONRepresentation
+{
+    EC_GROUP *ecgroup = EC_KEY_get0_group(_ecdsa);
+    BIGNUM *d = EC_KEY_get0_private_key(_ecdsa);
+    EC_POINT *pub = EC_KEY_get0_public_key(_ecdsa);
+
+    BIGNUM *x = BN_new();
+    BIGNUM *y = BN_new();
+    if (!EC_POINT_get_affine_coordinates_GFp(ecgroup, pub, x, y, NULL)) {
+        BN_free(x);
+        BN_free(y);
+        return nil;
+    }
+
+
+    NSDictionary *ret = @{
+                          @"algorithm": @"ES",
+                          @"d": [[CHNumber numberWithOpenSSLNumber: d] stringValue],
+                          @"x": [[CHNumber numberWithOpenSSLNumber: x] stringValue],
+                          @"y": [[CHNumber numberWithOpenSSLNumber: y] stringValue]
+                          };
+
+    BN_free(x);
+    BN_free(y);
+    return ret;
+}
+
+- (NSData*) BinaryRepresentation
+{
+    EC_GROUP *ecgroup = EC_KEY_get0_group(_ecdsa);
+
+    BIGNUM *d = EC_KEY_get0_private_key(_ecdsa);
+    NSMutableData *priv = [[NSMutableData alloc] initWithCapacity: BN_num_bytes(d)];
+
+    EC_POINT *pub = EC_KEY_get0_public_key(_ecdsa);
+    size_t ptLen = EC_POINT_point2oct(ecgroup, pub, POINT_CONVERSION_UNCOMPRESSED, NULL, 0, NULL);
+    NSMutableData *buf = [[NSMutableData alloc] initWithLength: ptLen];
+    EC_POINT_point2oct(ecgroup, pub, POINT_CONVERSION_UNCOMPRESSED, [buf bytes], ptLen, NULL);
+
+    [buf appendData: priv];
+    return buf;
 }
 
 - (NSString*) algorithm
@@ -89,6 +174,21 @@ const char* kECDSAP256Algorithm = "ECDSA-P256";
     EC_KEY *_ecdsa;
 }
 
+- (id) initWithJSONRepresentation: (NSDictionary*) object
+{
+    CHNumber *x = [CHNumber numberWithString: object[@"x"]];
+    CHNumber *y = [CHNumber numberWithString: object[@"y"]];
+    if (x == nil || y == nil) {
+        return nil;
+    }
+
+    ECDSAPoint *pt = [ECDSAPoint new];
+    pt.x = x;
+    pt.y = y;
+
+    return [self initWithPublicKey: pt group: ECDSAGroupP256];
+}
+
 - (instancetype) initWithPublicKey: (ECDSAPoint*) p group: (ECDSAGroup) group;
 {
     if (group != ECDSAGroupP256) {
@@ -102,12 +202,64 @@ const char* kECDSAP256Algorithm = "ECDSA-P256";
     return self;
 }
 
+- (instancetype) initWithBinaryRepresentation: (NSData*) data group: (ECDSAGroup) group;
+{
+    if (group != ECDSAGroupP256) {
+        return self;
+    }
+
+    if ((self = [super init]) != nil) {
+        _ecdsa = EC_KEY_new_by_curve_name(NID_P256);
+
+        EC_GROUP *ecgroup = EC_KEY_get0_group(_ecdsa);
+        EC_POINT *pub = EC_KEY_get0_public_key(_ecdsa);
+
+        EC_POINT_oct2point(ecgroup, pub, [data bytes], [data length], NULL);
+    }
+    return self;
+}
+
 - (void) dealloc
 {
     if (_ecdsa != NULL) {
         EC_KEY_free(_ecdsa);
         _ecdsa = NULL;
     }
+}
+
+- (NSDictionary*) JSONRepresentation
+{
+    EC_GROUP *ecgroup = EC_KEY_get0_group(_ecdsa);
+    EC_POINT *pub = EC_KEY_get0_public_key(_ecdsa);
+
+    BIGNUM *x = BN_new();
+    BIGNUM *y = BN_new();
+    if (!EC_POINT_get_affine_coordinates_GFp(ecgroup, pub, x, y, NULL)) {
+        BN_free(x);
+        BN_free(y);
+        return nil;
+    }
+
+    return @{
+             @"algorithm": @"ES",
+             @"x": [[CHNumber numberWithOpenSSLNumber: x] stringValue],
+             @"y": [[CHNumber numberWithOpenSSLNumber: y] stringValue]
+             };
+}
+
+- (NSData*) BinaryRepresentation
+{
+    // size_t EC_POINT_point2oct(const EC_GROUP *group, const EC_POINT *p,
+    //                           point_conversion_form_t form,
+    //                           unsigned char *buf, size_t len, BN_CTX *ctx);
+    EC_GROUP *ecgroup = EC_KEY_get0_group(_ecdsa);
+    EC_POINT *pub = EC_KEY_get0_public_key(_ecdsa);
+
+    size_t ptLen = EC_POINT_point2oct(ecgroup, pub, POINT_CONVERSION_UNCOMPRESSED, NULL, 0, NULL);
+
+    NSData *mut = [[NSMutableData alloc] initWithLength: ptLen];
+    EC_POINT_point2oct(ecgroup, pub, POINT_CONVERSION_UNCOMPRESSED, [mut bytes], ptLen, NULL);
+    return mut;
 }
 
 - (NSString*) algorithm
