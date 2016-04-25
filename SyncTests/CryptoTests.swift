@@ -105,7 +105,7 @@ class CryptoTests: XCTestCase {
         
         let sigRSA = rsa.privateKey.signMessage(cleartext)
         XCTAssertNotEqual(sigRSA, nil)
-        
+
         let verRSA = rsa.publicKey.verifySignature(sigRSA, againstMessage: cleartext)
         XCTAssertTrue(verRSA)
         
@@ -120,6 +120,21 @@ class CryptoTests: XCTestCase {
         
         let verECDSA = ecdsa.publicKey.verifySignature(sigECDSA, againstMessage: cleartext)
         XCTAssertTrue(verECDSA)
+
+        let privBytes = ecdsa.privateKey.BinaryRepresentation()
+        XCTAssertNotNil(privBytes)
+        
+        let privECDSA2 = ECDSAPrivateKey(binaryRepresentation: privBytes, group: .P256)
+        XCTAssertNotNil(privECDSA2)
+        let sigECDSA2 = privECDSA2.signMessage(cleartext)
+        let verECDSA2 = ecdsa.publicKey.verifySignature(sigECDSA2, againstMessage: cleartext)
+        XCTAssertTrue(verECDSA2)
+
+        let pubBytes = ecdsa.publicKey.BinaryRepresentation()
+        let pubECDSA3 = ECDSAPublicKey(binaryRepresentation: pubBytes, group: .P256)
+        XCTAssertNotNil(pubECDSA3)
+        let verECDSA3 = pubECDSA3.verifySignature(sigECDSA, againstMessage: cleartext)
+        XCTAssertTrue(verECDSA3)
 
         // Just test that this runs and produces non-empty output
         let cert = ecdsa.privateKey.selfSignedCertificateWithName("Test cert", slack: 0, lifetime: 60 * 60)

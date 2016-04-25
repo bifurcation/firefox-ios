@@ -25,7 +25,7 @@ typedef NS_ENUM(NSInteger, ECDSAGroup) {
 
 - (instancetype) initWithPrivateKey: (CHNumber*) d point: (ECDSAPoint*) p group: (ECDSAGroup) group;
 
-- (instancetype) initWithBinaryRepresentation: (NSData*) data;
+- (instancetype) initWithBinaryRepresentation: (NSData*) data group: (ECDSAGroup) group;
 - (NSData*) BinaryRepresentation;
 
 - (NSData*) selfSignedCertificateWithName: (NSString*) name slack: (int) slack lifetime: (int) lifetime;
@@ -37,7 +37,7 @@ typedef NS_ENUM(NSInteger, ECDSAGroup) {
 
 - (instancetype) initWithPublicKey: (ECDSAPoint*) p group: (ECDSAGroup) group;
 
-- (instancetype) initWithBinaryRepresentation: (NSData*) data;
+- (instancetype) initWithBinaryRepresentation: (NSData*) data group: (ECDSAGroup) group;
 - (NSData*) BinaryRepresentation;
 
 @end

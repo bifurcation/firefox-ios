@@ -18,6 +18,7 @@
 #define NID_P256 NID_X9_62_prime256v1
 
 const char* kECDSAP256Algorithm = "ECDSA-P256";
+const size_t kP256PointSize = 65;
 
 #define kECDSAFieldBytes 32
 
@@ -47,25 +48,33 @@ const char* kECDSAP256Algorithm = "ECDSA-P256";
 - (instancetype) initWithBinaryRepresentation: (NSData*) data group: (ECDSAGroup) group;
 {
     if (group != ECDSAGroupP256) {
-        return self;
+        return nil;
     }
 
     if ((self = [super init]) != nil) {
         _ecdsa = EC_KEY_new_by_curve_name(NID_P256);
 
         EC_GROUP *ecgroup = EC_KEY_get0_group(_ecdsa);
-        EC_POINT *pub = EC_KEY_get0_public_key(_ecdsa);
-        BIGNUM *priv = EC_KEY_get0_private_key(_ecdsa);
 
-        EC_POINT_oct2point(ecgroup, pub, [data bytes], [data length], NULL);
+        EC_POINT *pub = EC_POINT_new(ecgroup);
+        size_t dataLen = [data length];
+        NSLog(@"Lengths: pub(%d) <> data(%d)", kP256PointSize, dataLen);
+
+        if ((dataLen < kP256PointSize) || !EC_POINT_oct2point(ecgroup, pub, [data bytes], kP256PointSize, NULL)) {
+            EC_POINT_free(pub);
+            return nil;
+        }
         EC_KEY_set_public_key(_ecdsa, pub);
+        EC_POINT_free(pub);
 
-        size_t pubLen = EC_POINT_point2oct(ecgroup, pub, POINT_CONVERSION_UNCOMPRESSED, NULL, 0, NULL);
-        if (pubLen < [data length]) {
-            BN_bin2bn([data bytes] + pubLen, [data length] - pubLen, priv);
+        BIGNUM *priv = BN_bin2bn([data bytes] + kP256PointSize, [data length] - kP256PointSize, NULL);
+        if (priv) {
+            EC_KEY_set_private_key(_ecdsa, priv);
+            BN_free(priv);
+            return self;
         }
     }
-    return self;
+    return nil;
 }
 
 - (instancetype) initWithPrivateKey: (CHNumber*) d point: (ECDSAPoint*) p group: (ECDSAGroup) group;
@@ -118,12 +127,19 @@ const char* kECDSAP256Algorithm = "ECDSA-P256";
     EC_GROUP *ecgroup = EC_KEY_get0_group(_ecdsa);
 
     BIGNUM *d = EC_KEY_get0_private_key(_ecdsa);
-    NSMutableData *priv = [[NSMutableData alloc] initWithCapacity: BN_num_bytes(d)];
+    size_t dLen = BN_num_bytes(d);
+    NSMutableData *priv = [NSMutableData dataWithLength: dLen];
+    if (!BN_bn2bin(d, [priv bytes])) {
+        return nil;
+    }
+    NSLog(@"Wrote %d bytes", [priv length]);
 
     EC_POINT *pub = EC_KEY_get0_public_key(_ecdsa);
     size_t ptLen = EC_POINT_point2oct(ecgroup, pub, POINT_CONVERSION_UNCOMPRESSED, NULL, 0, NULL);
     NSMutableData *buf = [[NSMutableData alloc] initWithLength: ptLen];
-    EC_POINT_point2oct(ecgroup, pub, POINT_CONVERSION_UNCOMPRESSED, [buf bytes], ptLen, NULL);
+    if (!EC_POINT_point2oct(ecgroup, pub, POINT_CONVERSION_UNCOMPRESSED, [buf bytes], ptLen, NULL)) {
+        return nil;
+    }
 
     [buf appendData: priv];
     return buf;
@@ -175,11 +191,13 @@ const char* kECDSAP256Algorithm = "ECDSA-P256";
         return nil;
     }
 
-    /* Set the serial number. */
     ASN1_INTEGER_set(X509_get_serialNumber(x509), 1);
 
     X509_gmtime_adj(X509_get_notBefore(x509), -1 * slack);
     X509_gmtime_adj(X509_get_notAfter(x509), lifetime);
+
+    // By default, OpenSSL uses explicit parameters, which causes interop issues, e.g., with Java
+    EC_GROUP_set_asn1_flag(EC_KEY_get0_group(_ecdsa), OPENSSL_EC_NAMED_CURVE);
 
     EVP_PKEY *pkey = EVP_PKEY_new();
     if (pkey == NULL) {
@@ -258,9 +276,12 @@ const char* kECDSAP256Algorithm = "ECDSA-P256";
         _ecdsa = EC_KEY_new_by_curve_name(NID_P256);
 
         EC_GROUP *ecgroup = EC_KEY_get0_group(_ecdsa);
-        EC_POINT *pub = EC_KEY_get0_public_key(_ecdsa);
 
-        EC_POINT_oct2point(ecgroup, pub, [data bytes], [data length], NULL);
+        EC_POINT *pub = EC_POINT_new(ecgroup);
+        if (EC_POINT_oct2point(ecgroup, pub, [data bytes], [data length], NULL)) {
+            EC_KEY_set_public_key(_ecdsa, pub);
+        }
+        EC_POINT_free(pub);
     }
     return self;
 }

@@ -22,6 +22,7 @@ private let kTagID: String = "id"
 private let kTagAction: String = "action"
 
 private let kMasterKeyName = "org.mozilla.u2f.master_key"
+private let kCounterName = "org.mozilla.u2f.counter"
 
 // This must be kept in sync with KeyBundle.swift
 private let kMasterEncKeyLength: Int = 44 // 32 bytes in Base64
@@ -171,7 +172,7 @@ struct U2FDOMRequest {
     }
 }
 
-// The delegate just facilitates UI interactions and communications 
+// The delegate just facilitates UI interactions and communications
 // with content in the WKWebView
 @available(iOS 9, *)
 protocol U2FHelperDelegate: class {
@@ -216,6 +217,18 @@ class OpenSSLToken {
         return keys
     }
 
+    private func getCounter() -> NSData {
+        var counter: Int32 = 0
+        if let counterData = KeychainWrapper.dataForKey(kCounterName) {
+            counterData.getBytes(&counter, length: sizeof(Int32))
+        }
+
+        counter += 1
+        let counterData = NSData(bytes: &counter, length: sizeof(Int32))
+        KeychainWrapper.setData(counterData, forKey: kCounterName)
+        return counterData
+    }
+
     private func authenticate(result: (Bool -> ())) {
         // We manage the TouchID prompt ourselves (instead of using, say AppAuthenticator)
         // because we really want it to appear on every call.
@@ -231,19 +244,30 @@ class OpenSSLToken {
         }
     }
 
+
     func knownKey(keyHandle: String, forAppID appID: String) -> Bool {
         guard let appParam = appID.dataUsingEncoding(NSUTF8StringEncoding)?.SHA256Hash() else {
+            log.debug("Unable to compute appParam")
             return false
         }
 
-        guard let handle = NSData(base64EncodedString: keyHandle, options: NSDataBase64DecodingOptions()) else {
+        return self.knownKey(keyHandle, forAppParam: appParam)
+    }
+
+    func knownKey(keyHandle: String, forAppParam appParam: NSData) -> Bool {
+        guard let handle = NSData(base64URLEncodedString: keyHandle, options: NSDataBase64DecodingOptions()) else {
+            log.debug("Unable to decode key handle \(keyHandle)")
             return false
         }
 
         guard handle.length >= appParam.length else {
+            log.debug("Handle too short")
             return false
         }
 
+        let handleAppParam = NSData(bytes: handle.bytes, length: appParam.length)
+        log.debug("handle=\(handleAppParam.hexEncodedString)")
+        log.debug(" appID=\(appParam.hexEncodedString)")
         return NSData(bytes: handle.bytes, length: appParam.length).isEqualToData(appParam)
     }
 
@@ -267,12 +291,13 @@ class OpenSSLToken {
         let ecdsa = ECDSAKeyPair.generateKeyPairForGroup(.P256)
 
         let privBytes = ecdsa.privateKey.BinaryRepresentation()
-        guard let (encryptedPriv, iv) = keys.encrypt(privBytes) else {
+        let privB64 = privBytes.base64URLEncodedStringWithOptions(NSDataBase64EncodingOptions())
+        guard let (encryptedPriv, iv) = keys.encrypt(privB64.dataUsingEncoding(NSUTF8StringEncoding)!) else {
             result("{\"errorCode\":\"\(U2FErrorCode.OTHER_ERROR)\",\"errorMessage\":\"Failed to create key handle\"}")
             return
         }
 
-        let mac = keys.hmac(privBytes)
+        let mac = keys.hmac(encryptedPriv)
 
         // Assemble the key handle
         let keyHandle = NSMutableData()
@@ -295,6 +320,7 @@ class OpenSSLToken {
         attestationData.appendData(challengeParam)
         attestationData.appendData(keyHandle)
         attestationData.appendData(pubBytes)
+
         let attestationSig = attestationKeyPair.privateKey.signMessage(attestationData)
 
         // responseData = 0x05 || public[65] || keyHandleLength[1] || keyHandle || attestationCert || attestationSignature
@@ -307,6 +333,12 @@ class OpenSSLToken {
         responseData.appendData(keyHandle)
         responseData.appendData(attestationCert)
         responseData.appendData(attestationSig)
+
+        log.debug("   userPublicKey: \(pubBytes.hexEncodedString)")
+        log.debug("   keyHandle: \(keyHandle.hexEncodedString)")
+        log.debug("   attestationCertificate: \(attestationCert.hexEncodedString)")
+        log.debug("   userPublicKey: \(pubBytes.hexEncodedString)")
+        log.debug("Signing over: \(attestationData.hexEncodedString)")
 
         result(responseData.base64URLEncodedStringWithOptions(NSDataBase64EncodingOptions()))
     }
@@ -324,18 +356,16 @@ class OpenSSLToken {
         }
 
         // Check the appParam is known
-        let handle = keyHandle.dataUsingEncoding(NSUTF8StringEncoding)!
-        guard handle.length > kParamLength + kIVLength + kMACLength else {
-            result("{\"errorCode\":\"\(U2FErrorCode.OTHER_ERROR)\",\"errorMessage\":\"Key handle too short\"}")
-            return
-        }
-
-        guard NSData(bytes: handle.bytes, length: appParam.length).isEqualToData(appParam) else {
+        guard self.knownKey(keyHandle, forAppParam: appParam) else {
             result("{\"errorCode\":\"\(U2FErrorCode.OTHER_ERROR)\",\"errorMessage\":\"Unkown appID for key handle\"}")
             return
         }
 
         // Unwrap the private key from the key handle
+        guard let handle = NSData(base64URLEncodedString: keyHandle, options: NSDataBase64DecodingOptions()) else {
+            result("{\"errorCode\":\"\(U2FErrorCode.OTHER_ERROR)\",\"errorMessage\":\"Unable to decode key handle\"}")
+            return
+        }
         let keyLen = handle.length - (kParamLength + kIVLength + kMACLength)
         let iv = handle.subdataWithRange(NSMakeRange(kParamLength, kIVLength))
         let mac = handle.subdataWithRange(NSMakeRange(kParamLength + kIVLength, kMACLength))
@@ -351,26 +381,41 @@ class OpenSSLToken {
             return
         }
 
-        guard let privBytes = keys.decrypt(encryptedPrivate, iv: iv)?.dataUsingEncoding(NSUTF8StringEncoding) else {
+        guard let privB64 = keys.decrypt(encryptedPrivate, iv: iv) else {
             result("{\"errorCode\":\"\(U2FErrorCode.OTHER_ERROR)\",\"errorMessage\":\"Unable to unwrap key handle\"}")
+            return
+        }
+
+        guard let privBytes = NSData(base64URLEncodedString: privB64, options: NSDataBase64DecodingOptions()) else {
+            result("{\"errorCode\":\"\(U2FErrorCode.OTHER_ERROR)\",\"errorMessage\":\"Unable to decode key handle\"}")
             return
         }
 
         // Compute the signature
         // message = appParam || 0x01 || counter(4) || challengeParam
-        // TODO: Actually increment the counter
-        let presenceAndCounter = NSMutableData(bytes: [UInt8](arrayLiteral: 1,0,0,0,0), length: 5)
+        let counter = self.getCounter()
+        let presenceAndCounter = NSMutableData(bytes: [UInt8](arrayLiteral: 1), length: 1)
+        presenceAndCounter.appendData(counter)
+
         let message = NSMutableData()
         message.appendData(appParam)
         message.appendData(presenceAndCounter)
         message.appendData(challengeParam)
 
-        let privateKey = ECDSAPrivateKey(binaryRepresentation: privBytes)
+        guard let privateKey = ECDSAPrivateKey(binaryRepresentation: privBytes, group: .P256) else {
+            result("{\"errorCode\":\"\(U2FErrorCode.OTHER_ERROR)\",\"errorMessage\":\"Unable to decode key handle\"}")
+            return
+        }
         let sig = privateKey.signMessage(message)
 
         // Assemble the response data
         let responseData = presenceAndCounter
         responseData.appendData(sig)
+
+        log.debug("presenceAndCounter: \(presenceAndCounter.hexEncodedString)")
+        log.debug("sig: \(sig.hexEncodedString)")
+        log.debug("responseData: \(responseData.hexEncodedString)")
+
         result(responseData.base64URLEncodedStringWithOptions(NSDataBase64EncodingOptions()))
     }
 }
@@ -380,11 +425,11 @@ class OpenSSLToken {
 class U2FHelper: BrowserHelper {
     weak var delegate: U2FHelperDelegate?
     private weak var browser: Browser?
-    
+
     class func name() -> String {
         return "U2F"
     }
-    
+
     required init(browser: Browser) {
         self.browser = browser
 
@@ -393,7 +438,7 @@ class U2FHelper: BrowserHelper {
             browser.webView!.configuration.userContentController.addUserScript(userScript)
         }
     }
-    
+
     func scriptMessageHandlerName() -> String? {
         return "u2fHandler"
     }
@@ -409,15 +454,18 @@ class U2FHelper: BrowserHelper {
     //    DOMString             origin;
     //    (DOMString or JwkKey) cid_pubkey;
     // };
-    private func assembleClientData(type: String, challenge: String, origin: WKSecurityOrigin) -> String {
-        let originString = origin.`protocol` + "://" + origin.host + ":" + String(origin.port)
+    private func assembleClientData(type: String, challenge: String, origin: WKSecurityOrigin) -> NSData {
+        var originString = origin.`protocol` + "://" + origin.host
+        if origin.port != 0 && origin.port != 443 {
+            originString += ":" + String(origin.port)
+        }
+
         let clientData: [String:String] = [
             "typ": type,
             "challenge": challenge,
             "origin": originString
         ]
-        let json = try! NSJSONSerialization.dataWithJSONObject(clientData, options: .PrettyPrinted)
-        return String(NSString(data: json, encoding: NSUTF8StringEncoding)!)
+        return try! NSJSONSerialization.dataWithJSONObject(clientData, options: .PrettyPrinted)
     }
 
     private func register(request: U2FDOMRequest, result: ((U2FResponse) -> ())) {
@@ -443,11 +491,15 @@ class U2FHelper: BrowserHelper {
             guard token.supportedVersion(req.version) else { continue }
 
             let clientData = assembleClientData("navigator.id.finishEnrollment", challenge: req.challenge, origin: request.origin)
-            let challengeParam = clientData.dataUsingEncoding(NSUTF8StringEncoding)!.SHA256Hash()
+            let challengeParam = clientData.SHA256Hash()
             let appParam = request.appID.dataUsingEncoding(NSUTF8StringEncoding)!.SHA256Hash()
 
             token.register(challengeParam, appParam: appParam, result: { (responseData) in
-                result(U2FRegisterResponse(version: req.version, registrationData: responseData, clientData: clientData))
+                result(U2FRegisterResponse(
+                    version: req.version,
+                    registrationData: responseData,
+                    clientData: clientData.base64URLEncodedStringWithOptions(NSDataBase64EncodingOptions())
+                ))
             }, error: { (code, message) in
                 result(U2FErrorResponse(errorCode: code, errorMessage: message))
             })
@@ -476,15 +528,25 @@ class U2FHelper: BrowserHelper {
         }
 
         for key in request.registeredKeys {
-            guard token.supportedVersion(key.version) else { continue }
-            guard token.knownKey(key.keyHandle, forAppID: request.appID) else { continue }
+            guard token.supportedVersion(key.version) else {
+                log.debug("Unsupported version: \(key.version)")
+                continue
+            }
+            guard token.knownKey(key.keyHandle, forAppID: request.appID) else {
+                log.debug("Key not valid for appID: \(request.appID) \(key.keyHandle)")
+                continue
+            }
 
             let clientData = assembleClientData("navigator.id.getAssertion", challenge: request.challenge!, origin: request.origin)
-            let clientParam = clientData.dataUsingEncoding(NSUTF8StringEncoding)!.SHA256Hash()
+            let clientParam = clientData.SHA256Hash()
             let appParam = request.appID.dataUsingEncoding(NSUTF8StringEncoding)!.SHA256Hash()
 
             token.sign(key.keyHandle, challengeParam: clientParam, appParam: appParam, result: { signatureData in
-                result(U2FSignResponse(keyHandle: key.keyHandle, signatureData: signatureData, clientData: clientData))
+                result(U2FSignResponse(
+                    keyHandle: key.keyHandle,
+                    signatureData: signatureData,
+                    clientData: clientData.base64URLEncodedStringWithOptions(NSDataBase64EncodingOptions())
+                ))
             }, error: { (code, message) in
                 result(U2FErrorResponse(errorCode: code, errorMessage: message))
             })
@@ -517,9 +579,11 @@ class U2FHelper: BrowserHelper {
 
         // Reject requests from non-HTTPS origins
         // U2F.js doesn't present the API, but
+        /*
         if request.origin.`protocol` != "https" {
             delegate?.u2fFinish(id: request.id, response: U2FErrorResponse(errorCode: .BAD_REQUEST, errorMessage: "U2F is only supported on HTTPS origins"))
         }
+        */
 
         // Perform the required action
         switch request.action {

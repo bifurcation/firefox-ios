@@ -8,9 +8,11 @@
     // Only expose the API for secure origins.  Note that malicious code
     // can still send to the webkit.messageHandlers.u2fHandler enpoint
     // anyway, so we will need to guard in Swift as well.
+    /*
     if (window.location.protocol != "https:") {
         return;
     }
+    */
 
     if (!window.__firefox__) {
         window.__firefox__ = {};
